@@ -1,4 +1,8 @@
+version: '3'
 services:
   plaid-sync:
     build: .
-    container_name: plaid-sync
+    ports:
+      - "4343:4343"
+    volumes:
+      - .:/app
