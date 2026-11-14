@@ -1,0 +1,4 @@
+services:
+  plaid-sync:
+    build: .
+    container_name: plaid-sync
