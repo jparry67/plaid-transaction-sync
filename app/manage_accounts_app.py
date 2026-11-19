@@ -3,7 +3,7 @@
 from flask import Flask, request, jsonify
 
 from plaid_client import create_link_token, exchange_public_token
-from accounts_store import add_account
+from accounts_store import add_account, get_account_summaries
 
 app = Flask(__name__)
 
@@ -23,20 +23,43 @@ def setup_account():
     #status { margin-top: 16px; }
     .success {color: green; }
     .error { color: red; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #ddd; }
+    th { background: #f5f5f5; }
   </style>
 </head>
 <body>
   <h1>Linked Accounts</h1>
-  <p>Link your bank account to sync transactions.</p>
+  <table id="account-table" style="display: none;">
+    <thead><tr><th>Account</th></tr></thead>
+    <tbody></tbody>
+  </table>
   <button id="open-link">Add account</button>
   <div id="status"></div>
 
   <script>
+    async function renderAccounts() {
+      const res = await fetch('/api/accounts');
+      const accounts = await res.json();
+      const tbody = document.querySelector('#account-table tbody');
+      const table = document.getElementById('account-table');
+      tbody.innerHTML = '';
+      if (accounts.length > 0) {
+        table.style.display = '';
+        for (const a of accounts) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.textContent = `${a.institution} - ${a.name} - ending in ${a.mask}`;
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+      }
+    }
+    renderAccounts();
     document.getElementById('open-link').addEventListener('click', async () => {
       const status = document.getElementById('status');
       status.textContent = 'Linking accounts…';
       status.className = '';
-
       try {
         const res = await fetch('/api/create-link-token', { method: 'POST' });
         const { link_token } = await res.json();
@@ -44,11 +67,16 @@ def setup_account():
           token: link_token,
           onSuccess: async (public_token, metadata) => {
             try {
-              const accountsData = {public_token, accounts: metadata.accounts};
+              const accountsData = {
+                public_token,
+                accounts: metadata.accounts,
+                institution: metadata.institution ? metadata.institution.name : null,
+              };
               const addAccountResponse = await fetch('api/save-accounts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(accountsData)});
               if (addAccountResponse.ok) {
                 status.textContent = `${metadata.accounts.map((account) => account.name).join(', ')} linked successfully!`;
-                status.className = 'success'; 
+                status.className = 'success';
+                renderAccounts();
               } else {
                 status.className = 'error';
                 status.textContent = 'Failed to save account data. HTTP error status: ' + addAccountResponse.status;
@@ -83,12 +111,19 @@ def create_link_token_route():
     return jsonify(create_link_token())
 
 
+@app.route("/api/accounts", methods=["GET"])
+def list_accounts():
+    summary = get_account_summaries()
+    return jsonify(summary)
+
+
 @app.route("/api/save-accounts", methods=["POST"])
 def save_account():
     try:
         data = request.get_json()
         public_token = data['public_token']
         accounts = data['accounts']
+        institution = data.get('institution')
     except:
         return jsonify({"error": "Missing required fields or invalid JSON"}), 400
     
@@ -103,6 +138,7 @@ def save_account():
             "access_token": access_token,
             "item_id": item_id,
             "account_id": account.get("id"),
+            "institution": institution,
             "name": account.get("name"),
             "mask": account.get("mask"),
             "subtype": account.get("subtype"),
