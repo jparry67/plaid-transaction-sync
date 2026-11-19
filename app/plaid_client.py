@@ -3,6 +3,7 @@
 from plaid import ApiClient, Configuration
 from plaid.api.plaid_api import PlaidApi
 from plaid.model.country_code import CountryCode
+from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.products import Products
 
@@ -74,3 +75,14 @@ def create_link_token():
     )
     response = get_plaid_client().link_token_create(request_obj)
     return {"link_token": response.link_token}
+
+
+def exchange_public_token(public_token):
+    """Exchange a Plaid public_token for a permanent access_token."""
+    request_obj = ItemPublicTokenExchangeRequest(
+        public_token=public_token,
+        client_id=_PLAID_CLIENT_ID,
+        secret=_PLAID_SECRET,
+    )
+    response = get_plaid_client().item_public_token_exchange(request_obj)
+    return response.access_token, response.item_id
