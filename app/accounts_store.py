@@ -31,6 +31,22 @@ def add_account(account):
     _save_accounts(_accounts)
 
 
+def remove_account(account_id):
+    """Remove a single account by account_id and save."""
+    before = len(_accounts)
+    _accounts[:] = [a for a in _accounts if a.get("account_id") != account_id]
+    if len(_accounts) != before:
+        _save_accounts(_accounts)
+        print(f"Removed account {account_id}")
+
+
+def clear_accounts():
+    """Remove all accounts and save."""
+    _accounts.clear()
+    _save_accounts(_accounts)
+    print("Cleared all accounts")
+
+
 def get_accounts_with_tokens():
     """Return all stored accounts with decrypted access tokens."""
     result = []

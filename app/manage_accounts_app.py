@@ -3,7 +3,7 @@
 from flask import Flask, request, jsonify
 
 from plaid_client import create_link_token, exchange_public_token
-from accounts_store import add_account, get_account_summaries
+from accounts_store import add_account, get_account_summaries, remove_account, clear_accounts
 
 app = Flask(__name__)
 
@@ -48,9 +48,17 @@ def setup_account():
         table.style.display = '';
         for (const a of accounts) {
           const tr = document.createElement('tr');
-          const td = document.createElement('td');
-          td.textContent = `${a.institution} - ${a.name} - ending in ${a.mask}`;
-          tr.appendChild(td);
+          const tdName = document.createElement('td');
+          tdName.textContent = `${a.institution} - ${a.name} - ending in ${a.mask}`;
+          tr.appendChild(tdName);
+          const btn = document.createElement('button');
+          btn.textContent = '×';
+          btn.style.marginLeft = '12px';
+          btn.addEventListener('click', async () => {
+            await fetch(`/api/accounts?account_id=${a.account_id}`, { method: 'DELETE' });
+            renderAccounts();
+          });
+          tr.appendChild(btn);
           tbody.appendChild(tr);
         }
       }
@@ -115,6 +123,16 @@ def create_link_token_route():
 def list_accounts():
     summary = get_account_summaries()
     return jsonify(summary)
+
+
+@app.route("/api/accounts", methods=["DELETE"])
+def delete_accounts():
+    account_id = request.args.get("account_id")
+    if account_id:
+        remove_account(account_id)
+    else:
+        clear_accounts()
+    return "", 204
 
 
 @app.route("/api/save-accounts", methods=["POST"])
