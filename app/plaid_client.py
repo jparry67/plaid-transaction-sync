@@ -1,0 +1,76 @@
+"""Plaid API client initialization and helper functions."""
+
+from plaid import ApiClient, Configuration
+from plaid.api.plaid_api import PlaidApi
+from plaid.model.country_code import CountryCode
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.products import Products
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+_ENV_MAP = {
+    "sandbox": "https://sandbox.plaid.com",
+    "development": "https://development.plaid.com",
+    "production": "https://production.plaid.com",
+}
+
+_PLAID_ENV = os.getenv("PLAID_ENV")
+if _PLAID_ENV not in _ENV_MAP:
+    raise RuntimeError(
+        "PLAID_ENV must be one of: sandbox, development, production. "
+        f"Got: {_PLAID_ENV!r}"
+    )
+
+_PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID")
+if _PLAID_CLIENT_ID is None:
+    raise RuntimeError(
+        "PLAID_CLIENT_ID is not set. "
+        "Add it to your .env file."
+    )
+
+_PLAID_SECRET = os.getenv("PLAID_SECRET")
+if _PLAID_SECRET is None:
+    raise RuntimeError(
+        "PLAID_SECRET is not set. "
+        "Add it to your .env file."
+    )
+
+_config = Configuration(host=_ENV_MAP[_PLAID_ENV])
+_config.api_key = {"PlaidAPI": f"{_PLAID_CLIENT_ID}:{_PLAID_SECRET}"}
+
+_plaid_client = ApiClient(_config)
+_plaid_api = PlaidApi(_plaid_client)
+
+print(f"Plaid client initialized (env: {_PLAID_ENV}, host: {_config.host})")
+
+_PLAID_CLIENT_USER_ID = f"plaid-sync-{_PLAID_ENV}"
+_resp = _plaid_api.user_create({
+    "client_user_id": _PLAID_CLIENT_USER_ID,
+    "client_id": _PLAID_CLIENT_ID,
+    "secret": _PLAID_SECRET,
+})
+_PLAID_USER_OBJ_ID = _resp.user_id
+print(f"Plaid user created: {_PLAID_USER_OBJ_ID}")
+
+
+def get_plaid_client():
+    """Return the pre-initialized Plaid API (v43+ API object)."""
+    return _plaid_api
+
+
+def create_link_token():
+    """Create a Plaid link token and return it as a dict."""
+    request_obj = LinkTokenCreateRequest(
+        client_name="Plaid Transaction Sync",
+        language="en",
+        country_codes=[CountryCode("US")],
+        products=[Products("transactions")],
+        client_id=_PLAID_CLIENT_ID,
+        secret=_PLAID_SECRET,
+        user_id=_PLAID_USER_OBJ_ID,
+    )
+    response = get_plaid_client().link_token_create(request_obj)
+    return {"link_token": response.link_token}
