@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sync Transactions</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+    button { padding: 12px 24px; font-size: 16px; cursor: pointer; }
+    .nav { display: flex; gap: 16px; margin-bottom: 24px; }
+    .nav a { padding: 8px 16px; text-decoration: none; color: #333; border-bottom: 2px solid transparent; }
+    #status { margin-top: 16px; }
+    .success {color: green; }
+    .error { color: red; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #ddd; }
+    th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <h1>Sync Transactions</h1>
+  <div class="nav">
+    <a href="/accounts">Accounts</a>
+    <a href="/sync" style="border-bottom-color: #333;">Sync</a>
+  </div>
+
+  <button id="sync-all">Sync all accounts</button>
+  <div id="status"></div>
+  <table id="sync-table" style="display: none;">
+    <thead><tr><th>Account</th><th>Last Sync</th><th>Transactions</th><th>Status</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    async function renderSyncStatus() {
+      const res = await fetch('/api/sync/status');
+      const result = await res.json();
+      const tbody = document.querySelector('#sync-table tbody');
+      const table = document.getElementById('sync-table');
+      tbody.innerHTML = '';
+      if (result.length > 0) {
+        table.style.display = '';
+        for (const item of result) {
+          const tr = document.createElement('tr');
+          const tdName = document.createElement('td'); tdName.textContent = item.account_name || '-';
+          const tdLastSync = document.createElement('td'); tdLastSync.textContent = item.last_sync || 'Never';
+          const tdCount = document.createElement('td'); tdCount.textContent = item.transaction_count ?? '-';
+          const tdStatus = document.createElement('td');
+          tdStatus.textContent = item.error || (item.last_sync ? 'OK' : '-');
+          tdStatus.className = item.error ? 'error' : (item.last_sync ? 'success' : '');
+          tr.append(tdName, tdLastSync, tdCount, tdStatus);
+          tbody.appendChild(tr);
+        }
+      }
+    }
+    renderSyncStatus();
+    document.getElementById('sync-all').addEventListener('click', async () => {
+      const status = document.getElementById('status');
+      status.textContent = 'Syncing…';
+      status.className = '';
+      try {
+        const res = await fetch('/api/sync/run', { method: 'POST' });
+        if (res.ok) {
+          status.textContent = 'Sync complete';
+          status.className = 'success';
+        } else {
+          const body = await res.json();
+          status.className = 'error';
+          status.textContent = body.error || 'Sync failed';
+        }
+      } catch (err) {
+        status.className = 'error';
+        status.textContent = 'Error: ' + err.message;
+      }
+      renderSyncStatus();
+    });
+  </script>
+</body>
+</html>

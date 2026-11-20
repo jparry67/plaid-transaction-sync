@@ -4,11 +4,11 @@ import threading
 import subprocess
 import sys
 
-def start_management_app():
-    subprocess.run([sys.executable, "app/manage_accounts_app.py"])
+def start_app():
+    subprocess.run([sys.executable, "app/app.py"])
 
-management_thread = threading.Thread(target=start_management_app)
-management_thread.daemon = True
-management_thread.start()
-management_thread.join()
-print("Management app started on port 4343")
+app_thread = threading.Thread(target=start_app)
+app_thread.daemon = True
+app_thread.start()
+app_thread.join()
+print("App started on port 4343")

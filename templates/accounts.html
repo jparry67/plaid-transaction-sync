@@ -1,17 +1,4 @@
-"""Plaid account management app."""
 
-from flask import Flask, request, jsonify
-
-from plaid_client import create_link_token, exchange_public_token
-from accounts_store import add_account, get_account_summaries, remove_account, clear_accounts
-
-app = Flask(__name__)
-
-
-# ---------- root page ----------
-@app.route("/")
-def setup_account():
-    return """
 <!DOCTYPE html>
 <html>
 <head>
@@ -20,6 +7,8 @@ def setup_account():
   <style>
     body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
     button { padding: 12px 24px; font-size: 16px; cursor: pointer; }
+    .nav { display: flex; gap: 16px; margin-bottom: 24px; }
+    .nav a { padding: 8px 16px; text-decoration: none; color: #333; border-bottom: 2px solid transparent; }
     #status { margin-top: 16px; }
     .success {color: green; }
     .error { color: red; }
@@ -30,6 +19,11 @@ def setup_account():
 </head>
 <body>
   <h1>Linked Accounts</h1>
+  <div class="nav">
+    <a href="/accounts" style="border-bottom-color: #333;">Accounts</a>
+    <a href="/sync">Sync</a>
+  </div>
+
   <table id="account-table" style="display: none;">
     <thead><tr><th>Account</th></tr></thead>
     <tbody></tbody>
@@ -69,7 +63,7 @@ def setup_account():
       status.textContent = 'Linking accounts…';
       status.className = '';
       try {
-        const res = await fetch('/api/create-link-token', { method: 'POST' });
+        const res = await fetch('/api/accounts/link-token', { method: 'POST' });
         const { link_token } = await res.json();
         const handler = Plaid.create({
           token: link_token,
@@ -80,7 +74,7 @@ def setup_account():
                 accounts: metadata.accounts,
                 institution: metadata.institution ? metadata.institution.name : null,
               };
-              const addAccountResponse = await fetch('api/save-accounts', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(accountsData)});
+              const addAccountResponse = await fetch('/api/accounts/save', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(accountsData)});
               if (addAccountResponse.ok) {
                 status.textContent = `${metadata.accounts.map((account) => account.name).join(', ')} linked successfully!`;
                 status.className = 'success';
@@ -110,61 +104,3 @@ def setup_account():
   </script>
 </body>
 </html>
-    """
-
-
-# ---------- API: create a Plaid Link token ----------
-@app.route("/api/create-link-token", methods=["POST"])
-def create_link_token_route():
-    return jsonify(create_link_token())
-
-
-@app.route("/api/accounts", methods=["GET"])
-def list_accounts():
-    summary = get_account_summaries()
-    return jsonify(summary)
-
-
-@app.route("/api/accounts", methods=["DELETE"])
-def delete_accounts():
-    account_id = request.args.get("account_id")
-    if account_id:
-        remove_account(account_id)
-    else:
-        clear_accounts()
-    return "", 204
-
-
-@app.route("/api/save-accounts", methods=["POST"])
-def save_account():
-    try:
-        data = request.get_json()
-        public_token = data['public_token']
-        accounts = data['accounts']
-        institution = data.get('institution')
-    except:
-        return jsonify({"error": "Missing required fields or invalid JSON"}), 400
-    
-    try:
-        access_token, item_id = exchange_public_token(public_token)
-    except Exception as e:
-        print(f"Failed to exchange token: {e}")
-        return jsonify({"error": str(e)}), 500
-
-    for account in accounts:
-        account_data = {
-            "access_token": access_token,
-            "item_id": item_id,
-            "account_id": account.get("id"),
-            "institution": institution,
-            "name": account.get("name"),
-            "mask": account.get("mask"),
-            "subtype": account.get("subtype"),
-        }
-        add_account(account_data)
-
-    return "", 204
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=4343, debug=True)
