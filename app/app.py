@@ -9,28 +9,26 @@ from accounts_store import add_account, get_account_summaries, remove_account, c
 app = Flask(__name__)
 
 
-# ---------- Root: tab navigation ----------
+def _template_path(name):
+    return os.path.join(os.path.dirname(__file__), '..', 'templates', name)
+
+
+# ---------- Root page (serves /, /accounts, /sync) ----------
 @app.route("/")
-def root_page():
-    return open(os.path.join(os.path.dirname(__file__), '..', 'templates', 'index.html')).read()
-
-
-# ---------- Accounts page ----------
 @app.route("/accounts")
-def accounts_page():
-    return open(os.path.join(os.path.dirname(__file__), '..', 'templates', 'accounts.html')).read()
-
-
-# ---------- Sync page ----------
 @app.route("/sync")
-def sync_page():
-    return open(os.path.join(os.path.dirname(__file__), '..', 'templates', 'sync.html')).read()
+def page():
+    return open(_template_path('index.html')).read()
 
 
 # ---------- Sync API ----------
 @app.route("/api/sync/run", methods=["POST"])
 def run_sync():
-    # TODO: actual sync logic
+    account_id = request.args.get("account_id")
+    if account_id:
+        # TODO: actual single-account sync logic
+        return jsonify({"message": "sync not yet implemented", "account_id": account_id})
+    # TODO: actual all-accounts sync logic
     return jsonify({"message": "sync not yet implemented"})
 
 
@@ -69,7 +67,7 @@ def save_account():
         public_token = data['public_token']
         accounts = data['accounts']
         institution = data.get('institution')
-    except:
+    except Exception:
         return jsonify({"error": "Missing required fields or invalid JSON"}), 400
 
     try:
