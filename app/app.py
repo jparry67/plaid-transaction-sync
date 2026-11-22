@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 
 from plaid_client import create_link_token, exchange_public_token
 from accounts_store import add_account, get_account_summaries, remove_account, clear_accounts
+from transactions_sync import sync_all, sync_account, get_sync_history
 
 app = Flask(__name__)
 
@@ -24,18 +25,18 @@ def page():
 # ---------- Sync API ----------
 @app.route("/api/sync/run", methods=["POST"])
 def run_sync():
-    account_id = request.args.get("account_id")
+    data = request.get_json(silent=True) or {}
+    account_id = data.get("account_id")
     if account_id:
-        # TODO: actual single-account sync logic
-        return jsonify({"message": "sync not yet implemented", "account_id": account_id})
-    # TODO: actual all-accounts sync logic
-    return jsonify({"message": "sync not yet implemented"})
+        sync_account(account_id)
+        return jsonify({"message": "sync started", "account_id": account_id})
+    sync_all()
+    return jsonify({"message": "sync all started"})
 
 
-@app.route("/api/sync/status")
-def sync_status():
-    # TODO: actual sync status
-    return jsonify([])
+@app.route("/api/sync/history")
+def sync_history():
+    return jsonify(get_sync_history())
 
 
 # ---------- API: create a Plaid Link token ----------

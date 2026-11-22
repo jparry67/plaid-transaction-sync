@@ -59,9 +59,10 @@ def get_accounts_with_tokens():
 
 
 def get_account_summaries():
-    """Return a visibility-friendly list with institution, name, mask, and subtype."""
+    """Return a visibility-friendly list with institution, name, mask, subtype, and account_id."""
     return [
         {
+            "account_id": a.get("account_id"),
             "institution": a.get("institution"),
             "name": a.get("name"),
             "mask": a.get("mask"),
