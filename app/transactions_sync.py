@@ -3,9 +3,20 @@
 from collections import deque
 import threading
 import time
+from datetime import datetime, timezone
 
 _sync_queue = deque()
 _sync_history = []
+_sync_counter = 0
+
+def _ts():
+    """Return an ISO-8601 UTC timestamp string."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _log_entry(message):
+    """Wrap a log message with a timestamp."""
+    return {"message": message, "timestamp": _ts()}
 
 
 def get_sync_history():
@@ -14,7 +25,7 @@ def get_sync_history():
     for account_id in _sync_queue:
         result.append({
             "account_id": account_id,
-            "logs": ["queued"],
+            "logs": [],
             "success": False,
             "complete": False,
         })
@@ -67,12 +78,12 @@ def _sync(account_id):
 
     time.sleep(5)
 
-    entry["logs"].append("sync in progress")
+    entry["logs"].append(_log_entry("sync in progress"))
 
     time.sleep(5)
 
     entry["success"] = True
-    entry["logs"].append("sync complete")
+    entry["logs"].append(_log_entry("sync complete"))
     entry["complete"] = True
 
 
@@ -85,9 +96,12 @@ def _is_sync_in_progress():
 
 def _start_sync_for(account_id):
     """Create a new history object and set status to 'sync starting'."""
+    global _sync_counter
+    _sync_counter += 1
     entry = {
+        "sync_id": _sync_counter,
         "account_id": account_id,
-        "logs": ["sync starting"],
+        "logs": [_log_entry("sync starting")],
         "success": False,
         "complete": False,
     }

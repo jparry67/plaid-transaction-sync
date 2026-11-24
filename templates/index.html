@@ -28,8 +28,9 @@
     .history-toggle { background: none; border: none; cursor: pointer; padding: 0; margin-right: 4px; font-size: 14px; }
     .history-details { display: none; padding: 4px 12px 8px 24px; font-size: 12px; color: #555; }
     .history-details.visible { display: block; }
-    .history-details li { margin: 2px 0; list-style: none; }
+    .history-details li { margin: 2px 0; list-style: none; font-size: 12px; }
     .history-details li::before { content: '→ '; color: #888; }
+    .history-timestamp { white-space: nowrap; font-size: 12px; color: #777; }
   </style>
   <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 </head>
@@ -52,7 +53,7 @@
 
     <h2>Sync History</h2>
     <table class="history-table" id="history-table" style="display:none;">
-      <thead><tr><th></th><th>Account</th><th>Status</th></tr></thead>
+      <thead><tr><th></th><th>Timestamp</th><th>Account</th><th>Status</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
@@ -103,6 +104,57 @@
       showPage(pageId);
     });
 
+    // ---- Sync page: account list + history ----
+    window.addEventListener('page:sync', () => {
+      renderSyncAccounts();
+      renderHistory();
+    });
+
+    async function renderSyncAccounts() {
+      const res = await fetch('/api/accounts');
+      const accounts = await res.json();
+      const tbody = document.querySelector('#page-sync #account-table tbody');
+      const table = document.querySelector('#page-sync #account-table');
+      tbody.innerHTML = '';
+      if (accounts.length > 0) {
+        table.style.display = '';
+        for (const a of accounts) {
+          const tr = document.createElement('tr');
+          const tdName = document.createElement('td');
+          tdName.textContent = `${a.institution} - ${a.name} (${a.mask})`;
+          tr.appendChild(tdName);
+          const btn = document.createElement('button');
+          btn.textContent = 'Sync';
+          btn.addEventListener('click', async () => {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = 'Request sync for ' + a.name;
+            statusEl.className = '';
+            try {
+              const res = await fetch('/api/sync/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ account_id: a.account_id })
+              });
+              if (res.ok) {
+                watchForComplete();
+              } else {
+                const data = await res.json();
+                statusEl.textContent = data.message || 'Sync failed';
+                statusEl.className = 'error';
+              }
+            } catch (err) {
+              statusEl.textContent = 'Error: ' + err.message;
+              statusEl.className = 'error';
+            }
+          });
+          tr.appendChild(btn);
+          tbody.appendChild(tr);
+        }
+      } else {
+        table.style.display = 'none';
+      }
+    }
+
     // ---- Accounts page: table with delete button ----
     window.addEventListener('page:accounts', () => { renderAccounts(); });
 
@@ -117,18 +169,24 @@
         for (const a of accounts) {
           const tr = document.createElement('tr');
           const tdName = document.createElement('td');
-          tdName.textContent = `${a.institution} - ${a.name} - ending in ${a.mask}`;
+          tdName.textContent = `${a.institution} - ${a.name} (${a.mask})`;
           tr.appendChild(tdName);
           const btn = document.createElement('button');
           btn.textContent = '×';
           btn.style.marginLeft = '12px';
           btn.addEventListener('click', async () => {
-            await fetch(`/api/accounts?account_id=${a.account_id}`, { method: 'DELETE' });
-            renderAccounts();
+            try {
+              await fetch(`/api/accounts?account_id=${a.account_id}`, { method: 'DELETE' });
+              renderAccounts();
+            } catch (err) {
+              console.error('Failed to delete account:', err);
+            }
           });
           tr.appendChild(btn);
           tbody.appendChild(tr);
         }
+      } else {
+        table.style.display = 'none';
       }
     }
 
@@ -168,7 +226,7 @@
           },
           onExit: (err, metadata) => {
             status.className = 'error';
-            status.textContent = 'Exited before linking accounts.';
+            status.textContent = 'Link exited: ' + (err && err.error_message ? err.error_message : 'unknown error');
           },
         });
         handler.open();
@@ -178,53 +236,19 @@
       }
     });
 
-    // ---- Sync page: accounts table + history table ----
-    window.addEventListener('page:sync', () => { renderSyncRows(); renderHistory(); });
-
-    async function renderSyncRows() {
-      const res = await fetch('/api/accounts');
-      const accounts = await res.json();
-      const tbody = document.querySelector('#page-sync #account-table tbody');
-      const table = document.querySelector('#page-sync #account-table');
-      tbody.innerHTML = '';
-      if (accounts.length > 0) {
-        table.style.display = '';
-        for (const a of accounts) {
-          const tr = document.createElement('tr');
-          const tdName = document.createElement('td');
-          tdName.textContent = `${a.institution} - ${a.name} - ending in ${a.mask}`;
-          tr.appendChild(tdName);
-          const btn = document.createElement('button');
-          btn.textContent = 'Sync';
-          btn.addEventListener('click', async () => {
-            const statusEl = document.getElementById('status');
-            statusEl.textContent = 'Request sync for ' + a.name;
-            statusEl.className = '';
-            try {
-              const res = await fetch('/api/sync/run', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ account_id: a.account_id })
-              });
-              if (res.ok) {
-                watchForComplete(a.name);
-              } else {
-                const data = await res.json();
-                statusEl.textContent = data.message || 'Sync failed';
-                statusEl.className = 'error';
-              }
-            } catch (err) {
-              statusEl.textContent = 'Error: ' + err.message;
-              statusEl.className = 'error';
-            }
-          });
-          tr.appendChild(btn);
-          tbody.appendChild(tr);
-        }
-      }
+    // ---- Sync page: render sync history ----
+    function formatTimestamp(isoStr) {
+      if (!isoStr) return '';
+      const d = new Date(isoStr);
+      return d.toLocaleString();
     }
 
-    async function renderHistory() {
+  // Track state across renders for expand/collapse behavior
+  let _prevSeen = new Set();
+  let _prevExpanded = new Set();
+  let _prevComplete = new Set();
+
+  async function renderHistory() {
       const [historyRes, accountsRes] = await Promise.all([
         fetch('/api/sync/history'),
         fetch('/api/accounts'),
@@ -232,9 +256,8 @@
       const history = await historyRes.json();
       const accounts = await accountsRes.json();
 
-      const tbody = document.querySelector('#page-sync #history-table tbody');
-      const table = document.querySelector('#page-sync #history-table');
-
+      const tbody = document.querySelector('#history-table tbody');
+      const table = document.querySelector('#history-table');
       if (history.length === 0) {
         table.style.display = 'none';
         tbody.innerHTML = '';
@@ -242,16 +265,29 @@
       }
       table.style.display = '';
 
-      // Save which detail rows are visible
+      // Capture which rows the user currently has expanded or collapsed (before wiping tbody)
       const existingMainRows = Array.from(tbody.querySelectorAll('tr'));
-      const visibleState = {};
+      const userExpanded = new Set();
+      const userCollapsed = new Set();
       for (let i = 0; i < existingMainRows.length; i++) {
         const mainRow = existingMainRows[i];
         const detailsRow = mainRow.nextElementSibling;
         if (detailsRow && detailsRow.getAttribute('data-is-details') === 'true') {
-          const key = mainRow.getAttribute('data-idx');
-          const visible = detailsRow.querySelector('.history-details').classList.contains('visible');
-          visibleState[key] = visible;
+          const syncId = parseInt(mainRow.getAttribute('data-idx'), 10);
+          const entry = history.find(e => e.sync_id === syncId);
+          if (!entry) continue;
+          const visible = detailsRow.querySelector('.history-details')
+                          .classList.contains('visible');
+          const wasNew = !_prevSeen.has(syncId);
+          const wasComplete = _prevComplete.has(syncId);
+          // If it's a row we already saw (not new, not just completed), track user interaction
+          if (!wasNew && !(_prevComplete.has(syncId) && entry.complete && !wasComplete)) {
+            if (visible) {
+              userExpanded.add(syncId);
+            } else {
+              userCollapsed.add(syncId);
+            }
+          }
         }
       }
 
@@ -264,16 +300,58 @@
         tbody.appendChild(row.detailsRow);
       }
 
-      // Restore visible state for detail rows
-      const allDetailRows = Array.from(tbody.querySelectorAll('tr[data-is-details]'));
-      let mainRowIdx = 0;
-      for (const detailsRow of allDetailRows) {
-        const key = detailsRow.previousElementSibling.getAttribute('data-idx');
-        if (visibleState[key]) {
-          detailsRow.querySelector('.history-details').classList.add('visible');
-          detailsRow.previousElementSibling.querySelector('.history-toggle').textContent = '\u25B2';
+      // Decide which rows to expand
+      const allMainRows = Array.from(tbody.querySelectorAll('tr'));
+      for (let i = 0; i < allMainRows.length; i++) {
+        const mainRow = allMainRows[i];
+        const detailsRow = mainRow.nextElementSibling;
+        if (detailsRow && detailsRow.getAttribute('data-is-details') === 'true') {
+          const syncId = parseInt(mainRow.getAttribute('data-idx'), 10);
+          const entry = history.find(e => e.sync_id === syncId);
+          if (!entry) continue;
+
+          const isNew = !_prevSeen.has(syncId);
+          const wasPreviouslyComplete = _prevComplete.has(syncId);
+          const justCompleted = entry.complete && !wasPreviouslyComplete;
+
+          // Expand defaults:
+          // - New rows → expand (first time seeing this sync_id)
+          // - User-expanded rows → keep expanded
+          // - Previously seen, in-progress, not just completed → expand (user had it open)
+          // Don't re-expand rows the user collapsed
+          const userCollapsedIt = userCollapsed.has(syncId);
+          const shouldExpand = (
+            !userCollapsedIt && !justCompleted && (
+              isNew ||
+              userExpanded.has(syncId) ||
+              _prevSeen.has(syncId)
+            )
+          );
+
+          if (shouldExpand) {
+            detailsRow.querySelector('.history-details').classList.add('visible');
+            mainRow.querySelector('.history-toggle').textContent = '\u25B2';
+          }
+          // Track which were expanded this render
+          if (shouldExpand) {
+            _prevExpanded.add(syncId);
+          }
         }
-        mainRowIdx++;
+      }
+
+      // Update tracked state for next render
+      _prevSeen.clear();
+      _prevComplete.clear();
+      for (const mainRow of allMainRows) {
+        const detailsRow = mainRow.nextElementSibling;
+        if (detailsRow && detailsRow.getAttribute('data-is-details') === 'true') {
+          const syncId = parseInt(mainRow.getAttribute('data-idx'), 10);
+          _prevSeen.add(syncId);
+          const entry = history.find(e => e.sync_id === syncId);
+          if (entry && entry.complete) {
+            _prevComplete.add(syncId);
+          }
+        }
       }
     }
 
@@ -281,15 +359,25 @@
     function displayAccount(accountId, accounts) {
       const acct = accounts.find(a => a.account_id === accountId);
       if (acct) {
-        return acct.institution + ' - ' + acct.name + ' - ending in ' + acct.mask;
+        return acct.institution + " - " + acct.name + " (" + acct.mask + ")";
       }
       return accountId || '—';
     }
 
+    function getLastLogEntry(entry) {
+      // Support both old format (plain string) and new format ({message, timestamp})
+      const last = entry.logs[entry.logs.length - 1];
+      if (!last) return null;
+      if (typeof last === 'string') {
+        return { message: last, timestamp: '' };
+      }
+      return last;
+    }
+
     function createRow(entry, accounts) {
       const mainRow = document.createElement('tr');
-      mainRow.setAttribute("data-idx", String(entry.account_id) + "_" + entry.logs.length);
-      if (entry.logs[0] === 'queued') {
+      mainRow.setAttribute("data-idx", entry.sync_id);
+      if (entry.logs.length === 0) {
         mainRow.className = 'queued-row';
       } else if (entry.success && entry.complete) {
         mainRow.className = 'success-row';
@@ -299,6 +387,7 @@
         mainRow.className = 'failure-row';
       }
 
+      // Toggle button
       const toggleBtn = document.createElement('button');
       toggleBtn.className = 'history-toggle';
       toggleBtn.textContent = '\u25BC';
@@ -306,24 +395,42 @@
       tdToggle.appendChild(toggleBtn);
       mainRow.appendChild(tdToggle);
 
+      // Timestamp column (left-most after toggle)
+      const lastEntry = getLastLogEntry(entry);
+      const tdTimestamp = document.createElement('td');
+      tdTimestamp.className = 'history-timestamp';
+      tdTimestamp.textContent = lastEntry ? formatTimestamp(lastEntry.timestamp) : '';
+      mainRow.appendChild(tdTimestamp);
+
+      // Account column
       const tdAccount = document.createElement('td');
       tdAccount.textContent = displayAccount(entry.account_id, accounts);
       mainRow.appendChild(tdAccount);
 
+      // Status column (text of latest log)
       const tdStatus = document.createElement('td');
-      const lastLog = entry.logs.length > 0 ? entry.logs[entry.logs.length - 1] : '';
-      tdStatus.textContent = lastLog.length > 13 ? lastLog.slice(0, 11) + '...' : lastLog;
+      const lastLogText = lastEntry ? lastEntry.message : '';
+      tdStatus.textContent = lastLogText.length > 13 ? lastLogText.slice(0, 11) + '...' : lastLogText;
       mainRow.appendChild(tdStatus);
 
+      // Details row with full log list (each log shows its timestamp)
       const detailsRow = document.createElement('tr');
       detailsRow.setAttribute('data-is-details', 'true');
       const detailsTd = document.createElement('td');
-      detailsTd.colSpan = 3;
+      detailsTd.colSpan = 4;
       const ul = document.createElement('ul');
       ul.className = 'history-details';
       for (const log of entry.logs) {
         const li = document.createElement('li');
-        li.textContent = log;
+        let msg, ts;
+        if (typeof log === 'string') {
+          msg = log;
+          ts = '';
+        } else {
+          msg = log.message;
+          ts = log.timestamp ? formatTimestamp(log.timestamp) : '';
+        }
+        li.textContent = (ts ? ts + ' ' : '') + msg;
         ul.appendChild(li);
       }
       detailsTd.appendChild(ul);
@@ -362,7 +469,7 @@
       try {
         const res = await fetch('/api/sync/run', { method: 'POST' });
         if (res.ok) {
-          watchForComplete('all accounts');
+          watchForComplete();
         } else {
           const body = await res.json();
           status.className = 'error';
