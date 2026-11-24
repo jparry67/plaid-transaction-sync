@@ -5,9 +5,19 @@ import threading
 import time
 from datetime import datetime, timezone
 
+from store import _load_or_init, save
+
+_FILE_PATH = "sync_history.json"
+
 _sync_queue = deque()
-_sync_history = []
-_sync_counter = 0
+_sync_history = _load_or_init(_FILE_PATH, [])
+_sync_counter = max((e.get("sync_id", 0) for e in _sync_history), default=0)
+
+
+def _save_history():
+    """Persist sync history to disk."""
+    save(_FILE_PATH, _sync_history)
+
 
 def _ts():
     """Return an ISO-8601 UTC timestamp string."""
@@ -34,7 +44,7 @@ def get_sync_history():
 
 def sync_all():
     """Add all account IDs to the queue and kick off processing in a background thread."""
-    from accounts_store import get_accounts_with_tokens
+    from accounts import get_accounts_with_tokens
     accounts = get_accounts_with_tokens()
     for acct in accounts:
         _sync_queue.append(acct.get("account_id"))
@@ -79,12 +89,21 @@ def _sync(account_id):
     time.sleep(5)
 
     entry["logs"].append(_log_entry("sync in progress"))
+    _save_history()
 
     time.sleep(5)
 
     entry["success"] = True
     entry["logs"].append(_log_entry("sync complete"))
     entry["complete"] = True
+    _save_history()
+
+
+def _trim_history():
+    """Keep only the 30 most recent syncs."""
+    while len(_sync_history) > 30:
+        _sync_history.pop(0)
+    _save_history()
 
 
 def _is_sync_in_progress():
@@ -106,4 +125,5 @@ def _start_sync_for(account_id):
         "complete": False,
     }
     _sync_history.append(entry)
+    _trim_history()
     return entry

@@ -1,26 +1,15 @@
 """Account storage backed by a local JSON file."""
 
-import json
-import os
-
 from encryption import encrypt, decrypt
+from store import _load_or_init, save
 
 _FILE_PATH = "accounts.json"
-_accounts = []
-
-# Load accounts from disk on first import
-if os.path.exists(_FILE_PATH):
-    with open(_FILE_PATH, "r") as f:
-        _accounts = json.load(f)
-else:
-    _accounts = []
-print(f"Loaded {len(_accounts)} account(s) from {_FILE_PATH}")
+_accounts = _load_or_init(_FILE_PATH, [])
 
 
 def _save_accounts(accounts):
     """Persist accounts to disk."""
-    with open(_FILE_PATH, "w") as f:
-        json.dump(accounts, f, indent=2)
+    save(_FILE_PATH, accounts)
 
 
 def add_account(account):

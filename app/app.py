@@ -4,7 +4,7 @@ import os
 from flask import Flask, request, jsonify
 
 from plaid_client import create_link_token, exchange_public_token
-from accounts_store import add_account, get_account_summaries, remove_account, clear_accounts
+from accounts import add_account, get_account_summaries, remove_account, clear_accounts
 from transactions_sync import sync_all, sync_account, get_sync_history
 
 app = Flask(__name__)
