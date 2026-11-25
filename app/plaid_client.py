@@ -1,11 +1,14 @@
 """Plaid API client initialization and helper functions."""
 
+from datetime import date, timedelta
+
 from plaid import ApiClient, Configuration
 from plaid.api.plaid_api import PlaidApi
 from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.products import Products
+from plaid.model.transactions_get_request import TransactionsGetRequest
 
 import os
 from dotenv import load_dotenv
@@ -21,7 +24,7 @@ _ENV_MAP = {
 _PLAID_ENV = os.getenv("PLAID_ENV")
 if _PLAID_ENV not in _ENV_MAP:
     raise RuntimeError(
-        "PLAID_ENV must be one of: sandbox, development, production. "
+        "PLAID_ENV must be one of: sandbox, production. "
         f"Got: {_PLAID_ENV!r}"
     )
 
@@ -86,3 +89,30 @@ def exchange_public_token(public_token):
     )
     response = get_plaid_client().item_public_token_exchange(request_obj)
     return response.access_token, response.item_id
+
+
+def get_transactions(access_token, days=30, account_ids=None):
+    """Retrieve transactions within the last N days (default 30)
+    using /transactions/get with explicit start/end dates.
+
+    *account_ids* can be used server-side to filter to specific
+    accounts within an item (Plaid returns all accounts for an
+    item under a single access_token by default).
+
+    Returns a list of transaction dicts.
+    """
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+    options = {"count": 500}
+    if account_ids is not None:
+        options["account_ids"] = account_ids
+    request_obj = TransactionsGetRequest(
+        access_token=access_token,
+        start_date=start_date,
+        end_date=end_date,
+        options=options,
+        client_id=_PLAID_CLIENT_ID,
+        secret=_PLAID_SECRET,
+    )
+    response = get_plaid_client().transactions_get(request_obj)
+    return response.transactions or []

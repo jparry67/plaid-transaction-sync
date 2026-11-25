@@ -220,3 +220,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 accounts.json
+sandbox_accounts.json
+sync_history.json
+sandbox_sync_history.json
+csv_transactions/

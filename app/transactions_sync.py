@@ -1,11 +1,14 @@
 """Transaction sync queue and history."""
 
+import csv
+import os
 from collections import deque
 import threading
-import time
 from datetime import datetime, timezone
 
 from store import _load_or_init, save
+from accounts import get_accounts_with_tokens
+from plaid_client import get_transactions
 
 _FILE_PATH = "sync_history.json"
 
@@ -29,6 +32,11 @@ def _log_entry(message):
     return {"message": message, "timestamp": _ts()}
 
 
+def _normalize(string):
+    """Normalize strings for filenames."""
+    return "_".join(string.lower().strip().split())
+
+
 def get_sync_history():
     """Return all completed/running syncs, plus any queued (pending) items."""
     result = list(_sync_history)
@@ -44,7 +52,6 @@ def get_sync_history():
 
 def sync_all():
     """Add all account IDs to the queue and kick off processing in a background thread."""
-    from accounts import get_accounts_with_tokens
     accounts = get_accounts_with_tokens()
     for acct in accounts:
         _sync_queue.append(acct.get("account_id"))
@@ -78,26 +85,75 @@ def _start_sync():
 
 
 def _sync(account_id):
-    """Simulate syncing a single account with status updates.
+    """Sync transactions for a single account.
 
-    1. Status: "sync starting"  → sleep 5s
-    2. Status: "sync in progress"  → sleep 5s
+    1. Status: "sync starting" (from _start_sync_for)
+    2. Status: "sync in progress" with transaction count
     3. Status: "sync complete", success, complete  → done
     """
+
     entry = _start_sync_for(account_id)
 
-    time.sleep(5)
+    # Find the account's access token
+    accounts = get_accounts_with_tokens()
+    acct = next((a for a in accounts if a["account_id"] == account_id), None)
+    if not acct:
+        entry["logs"].append(_log_entry("error: account not found"))
+        entry["complete"] = True
+        _save_history()
+        return
 
-    entry["logs"].append(_log_entry("sync in progress"))
-    _save_history()
+    try:
+        trxs = get_transactions(acct["access_token"], days=30, account_ids=[account_id])
+        transactions = []
+        for transaction in trxs:
+            transactions.append({
+                "date": transaction["date"].strftime("%m/%d/%Y"),
+                "description": transaction["name"],
+                "amount": -1 * float(transaction["amount"]),
+                "status": "Pending" if transaction["pending"] else "Posted"
+            })
+        entry["logs"].append(_log_entry(f"pulled {len(transactions)} transactions"))
+        _write_transactions_csv(acct, transactions, entry)
 
-    time.sleep(5)
+    except Exception as e:
+        entry["logs"].append(_log_entry(f"error: {e}"))
+        entry["complete"] = True
+        _save_history()
 
     entry["success"] = True
-    entry["logs"].append(_log_entry("sync complete"))
     entry["complete"] = True
     _save_history()
 
+
+def _write_transactions_csv(acct, transactions, entry):
+    """Write *transactions* to a dated CSV file under csv_transactions/.
+
+    The file is named like ``{institution}_{name}_{mask}_{MM_DD_YYYY}.csv``.
+    If there are no transactions the entry is logged but no file is created.
+    """
+    today = datetime.now()
+    acct_file_name = (
+        f"{_normalize(acct['institution'])}_"
+        f"{_normalize(acct['name'])}_"
+        f"{_normalize(acct['mask'])}_"
+        f"{today.strftime('%m_%d_%Y')}.csv"
+    )
+    csv_dir = "csv_transactions"
+    os.makedirs(csv_dir, exist_ok=True)
+    csv_path = os.path.join(csv_dir, acct_file_name)
+
+    if not transactions:
+        entry["logs"].append(_log_entry("no transactions to write"))
+        return
+
+    fieldnames = transactions[0].keys()
+    with open(csv_path, "w", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(transactions)
+    entry["logs"].append(_log_entry(f"wrote {len(transactions)} transactions to {acct_file_name}"))
+    _save_history()
 
 def _trim_history():
     """Keep only the 30 most recent syncs."""
